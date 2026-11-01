@@ -125,3 +125,116 @@ def test_stock_level_reflects_product_update(client):
 def test_stock_level_for_nonexistent_product_returns_404(client):
     assert client.get("/products/999/stock-level").status_code == 404
 
+# -_-_-_-_-_-_-_-_-_-_-_-_- view low stock prod (r17, r18, r19)
+
+def test_low_stock_includes_product_at_threshold(client):
+    """Boundary: quantity equal to reorder_level counts as low stock."""
+    make_product(client, name="Hammer", sku="HAM-001", quantity_on_hand=10, reorder_level=10)
+    flagged = client.get("/products/low-stock").get_json()
+    assert [p["name"] for p in flagged] == ["Hammer"]
+
+
+def test_low_stock_excludes_product_above_threshold(client):
+    make_product(client, name="Hammer", sku="HAM-001", quantity_on_hand=11, reorder_level=10)
+    assert client.get("/products/low-stock").get_json() == []
+
+
+def test_low_stock_only_lists_flagged_products(client):
+    make_product(client, name="Hammer", sku="HAM-001", quantity_on_hand=2, reorder_level=10)
+    make_product(client, name="Saw", sku="SAW-001", quantity_on_hand=50, reorder_level=10)
+    flagged = client.get("/products/low-stock").get_json()
+    assert [p["name"] for p in flagged] == ["Hammer"]
+
+
+def test_product_becomes_low_stock_after_outgoing_transaction(client):
+    """Workflow: an OUT transaction drops stock to the threshold."""
+    product = make_product(client, quantity_on_hand=12, reorder_level=10)
+    assert client.get("/products/low-stock").get_json() == []
+    client.post("/transactions", json={"product_id": product["id"], "type": "OUT", "quantity": 2})
+    flagged = client.get("/products/low-stock").get_json()
+    assert [p["id"] for p in flagged] == [product["id"]]
+
+# -_-_-_-_-_-_-_-_-_-_-_-_- record incoming stock (r1, r2, r6, r8)
+
+def test_incoming_transaction_increases_stock(client):
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post(
+        "/transactions",
+        json={"product_id": product["id"], "type": "IN", "quantity": 7},
+    )
+    assert response.status_code == 201
+    tx = response.get_json()
+    assert tx["type"] == "IN"
+    assert tx["quantity"] == 7
+    assert tx["product_id"] == product["id"]
+    stock = client.get(f"/products/{product['id']}/stock-level").get_json()
+    assert stock["quantity_on_hand"] == 12
+
+
+def test_incoming_transaction_records_supplier(client):
+    product = make_product(client)
+    client.post("/suppliers", json={"name": "Acme Tools", "contact_email": "acme@example.com"})
+    tx = client.post(
+        "/transactions",
+        json={"product_id": product["id"], "type": "IN", "quantity": 3, "supplier_id": 1},
+    ).get_json()
+    assert tx["supplier_id"] == 1
+
+
+def test_transaction_for_nonexistent_product_returns_404_and_is_not_logged(client):
+    response = client.post("/transactions", json={"product_id": 999, "type": "IN", "quantity": 5})
+    assert response.status_code == 404
+    assert client.get("/transactions").get_json() == []
+
+
+def test_invalid_transaction_type_is_rejected_and_stock_unchanged(client):
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post(
+        "/transactions",
+        json={"product_id": product["id"], "type": "MOVE", "quantity": 5},
+    )
+    assert response.status_code == 400
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
+
+# -_-_-_-_-_-_-_-_-_-_-_-_- record outgoing stock (r1, r3, r6, r8)
+
+def test_outgoing_transaction_decreases_stock(client):
+    product = make_product(client, quantity_on_hand=12)
+    response = client.post(
+        "/transactions",
+        json={"product_id": product["id"], "type": "OUT", "quantity": 2},
+    )
+    assert response.status_code == 201
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 10
+
+
+def test_in_then_out_leaves_correct_stock(client):
+    """Workflow: 5 + 7 - 2 = 10 (mirrors the Table A R1 check)."""
+    product = make_product(client, quantity_on_hand=5)
+    client.post("/transactions", json={"product_id": product["id"], "type": "IN", "quantity": 7})
+    client.post("/transactions", json={"product_id": product["id"], "type": "OUT", "quantity": 2})
+    assert client.get(f"/products/{product['id']}/stock-level").get_json()["quantity_on_hand"] == 10
+
+
+def test_outgoing_transaction_with_negative_quantity_is_rejected(client):
+    """R3: OUT must decrease stock. KNOWN DEFECT: the API accepts -3 and
+    increases stock from 5 to 8 instead of rejecting the request."""
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post(
+        "/transactions",
+        json={"product_id": product["id"], "type": "OUT", "quantity": -3},
+    )
+    assert response.status_code == 400
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
+
+
+def test_outgoing_transaction_cannot_exceed_stock_on_hand(client):
+    """R1/R3: stock on hand cannot go below zero. KNOWN DEFECT: an OUT of 10
+    against 5 in stock is accepted and leaves quantity_on_hand at -5."""
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post(
+        "/transactions",
+        json={"product_id": product["id"], "type": "OUT", "quantity": 10},
+    )
+    assert response.status_code == 400
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
