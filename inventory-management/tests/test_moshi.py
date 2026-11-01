@@ -238,3 +238,46 @@ def test_outgoing_transaction_cannot_exceed_stock_on_hand(client):
     )
     assert response.status_code == 400
     assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
+
+# -_-_-_-_-_-_-_-_-_-_-_-_- view / filter transactions (r5)
+
+def test_transactions_list_starts_empty(client):
+    assert client.get("/transactions").get_json() == []
+
+
+def test_transaction_log_includes_type_quantity_and_date(client):
+    """R5 (partial): each logged change has a type, quantity and date."""
+    product = make_product(client)
+    client.post("/transactions", json={"product_id": product["id"], "type": "IN", "quantity": 4})
+    log = client.get("/transactions").get_json()
+    assert len(log) == 1
+    entry = log[0]
+    assert entry["type"] == "IN"
+    assert entry["quantity"] == 4
+    assert entry["product_id"] == product["id"]
+    assert entry["transaction_date"]  # ISO date string, e.g. "2026-11-01"
+
+
+def test_filter_transactions_by_supplier(client):
+    product = make_product(client)
+    client.post("/suppliers", json={"name": "Acme Tools", "contact_email": "acme@example.com"})
+    client.post("/suppliers", json={"name": "Kingston Supply", "contact_email": "ks@example.com"})
+    client.post("/transactions", json={"product_id": product["id"], "type": "IN", "quantity": 1, "supplier_id": 1})
+    client.post("/transactions", json={"product_id": product["id"], "type": "IN", "quantity": 2, "supplier_id": 2})
+    results = client.get("/transactions?supplier_id=2").get_json()
+    assert [t["quantity"] for t in results] == [2]
+
+
+def test_filter_transactions_by_product_returns_only_that_product(client):
+    """R5: staff must be able to review a product's stock changes.
+    KNOWN DEFECT: the product_id filter compares against supplier_id, so the
+    OUT transaction (no supplier) for product 1 is dropped from the results."""
+    hammer = make_product(client, name="Hammer", sku="HAM-001")
+    make_product(client, name="Saw", sku="SAW-001")
+    client.post("/suppliers", json={"name": "Acme Tools", "contact_email": "acme@example.com"})
+    client.post("/transactions", json={"product_id": hammer["id"], "type": "OUT", "quantity": 1})
+    client.post("/transactions", json={"product_id": hammer["id"], "type": "IN", "quantity": 2, "supplier_id": 1})
+    client.post("/transactions", json={"product_id": 2, "type": "IN", "quantity": 3})
+    results = client.get(f"/transactions?product_id={hammer['id']}").get_json()
+    assert sorted(t["quantity"] for t in results) == [1, 2]
+    assert all(t["product_id"] == hammer["id"] for t in results)
