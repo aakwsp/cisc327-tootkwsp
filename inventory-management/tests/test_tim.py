@@ -100,3 +100,62 @@ def test_delete_supplier_removes_supplier(client):
     list_response = client.get("/suppliers")
     assert list_response.status_code == 200
     assert list_response.get_json() == []
+
+
+def create_product(client, name="Hammer", sku="HAM-001"):
+    response = client.post(
+        "/products",
+        json={
+            "name": name,
+            "sku": sku,
+            "unit_price": 19.99,
+            "quantity_on_hand": 5,
+            "reorder_level": 2,
+        },
+    )
+
+    assert response.status_code == 201
+    return response.get_json()
+
+
+def test_supplier_products_returns_products_received_from_supplier(client):
+    supplier = create_supplier(client)
+    hammer = create_product(client, "Hammer", "HAM-001")
+    drill = create_product(client, "Drill", "DRL-001")
+
+    in_response = client.post(
+        "/transactions",
+        json={
+            "product_id": hammer["id"],
+            "supplier_id": supplier["id"],
+            "type": "IN",
+            "quantity": 10,
+        },
+    )
+    assert in_response.status_code == 201
+
+    client.post(
+        "/transactions",
+        json={
+            "product_id": drill["id"],
+            "type": "OUT",
+            "quantity": 1,
+        },
+    )
+
+    response = client.get(f"/suppliers/{supplier['id']}/products")
+
+    assert response.status_code == 200
+
+    products = response.get_json()
+
+    assert len(products) == 1
+    assert products[0]["id"] == hammer["id"]
+    assert products[0]["name"] == "Hammer"
+
+
+def test_supplier_products_returns_404_for_missing_supplier(client):
+    response = client.get("/suppliers/999/products")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "Supplier not found"
