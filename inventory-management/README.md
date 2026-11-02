@@ -38,6 +38,7 @@ app working without a REST client, and calls the same in-memory store.
 - **Supplier**: `id, name, contact_email`
 - **Transaction**: `id, product_id, supplier_id, type (IN/OUT), quantity, transaction_date`
 - **StockAdjustment**: `id, product_id, previous_quantity, counted_quantity, difference, staff_name, reason, created_at`
+- **Purchase Order**: `id, supplier_id, product_id, quantity_ordered, quantity_received, status, created_date, received_date`
 
 ## JSON API Endpoints
 
@@ -58,6 +59,10 @@ app working without a REST client, and calls the same in-memory store.
 | DELETE | `/suppliers/<id>` | Delete a supplier |
 | POST | `/transactions` | Record a stock movement (`product_id`, `type`: IN/OUT, `quantity`, optional `supplier_id`) |
 | GET | `/transactions?product_id=&supplier_id=` | Look up transactions |
+| GET | /purchase-orders | List all purchase orders |
+| POST | /purchase-orders | Create a purchase order (supplier_id, product_id, quantity_ordered) |
+| GET | /purchase-orders/<id> | Get one purchase order |
+| PUT | /purchase-orders/<id>/receive | Receive a purchase order. Optional quantity_received; defaults to quantity_ordered. Updates stock and records an IN transaction for the actual quantity received. |
 
 ## Tests
 
