@@ -10,9 +10,9 @@ products = {}
 suppliers = {}
 transactions = {}
 purchase_orders = {}
+adjustments = {}
 
-_next_ids = {"product": 1, "supplier": 1, "transaction": 1, "purchase_order": 1}
-
+_next_ids = {"product": 1, "supplier": 1, "transaction": 1, "purchase_order": 1, "adjustment": 1}
 
 def next_id(kind):
     id_ = _next_ids[kind]
@@ -26,4 +26,5 @@ def reset():
     suppliers.clear()
     transactions.clear()
     purchase_orders.clear()
-    _next_ids.update(product=1, supplier=1, transaction=1, purchase_order=1)
+    adjustments.clear()
+    _next_ids.update(product=1, supplier=1, transaction=1, purchase_order=1, adjustment=1)
