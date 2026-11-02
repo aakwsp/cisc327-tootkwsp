@@ -281,3 +281,66 @@ def test_filter_transactions_by_product_returns_only_that_product(client):
     results = client.get(f"/transactions?product_id={hammer['id']}").get_json()
     assert sorted(t["quantity"] for t in results) == [1, 2]
     assert all(t["product_id"] == hammer["id"] for t in results)
+
+# -_-_-_-_-_-_-_-_-_-_-_-_- enhancement: stock-count correction (R4, R5)
+
+def test_adjustment_sets_stock_to_counted_quantity_and_logs_it(client):
+    """Workflow: system says 10, physical count is 8 -> stock becomes 8 and the
+    correction is logged with who made it, when, and the difference."""
+    product = make_product(client, quantity_on_hand=10)
+    response = client.post("/adjustments", json={
+        "product_id": product["id"], "counted_quantity": 8,
+        "staff_name": "Moshi", "reason": "Cycle count found 2 damaged",
+    })
+    assert response.status_code == 201
+    adj = response.get_json()
+    assert adj["previous_quantity"] == 10
+    assert adj["counted_quantity"] == 8
+    assert adj["difference"] == -2
+    assert adj["staff_name"] == "Moshi"
+    assert "T" in adj["created_at"]  # date AND time, e.g. 2026-11-01T17:05:00
+    assert client.get(f"/products/{product['id']}/stock-level").get_json()["quantity_on_hand"] == 8
+    log = client.get(f"/adjustments?product_id={product['id']}").get_json()
+    assert [a["id"] for a in log] == [adj["id"]]
+
+
+def test_adjustment_upward_count_increases_stock(client):
+    product = make_product(client, quantity_on_hand=3)
+    adj = client.post("/adjustments", json={
+        "product_id": product["id"], "counted_quantity": 7, "staff_name": "Moshi",
+    }).get_json()
+    assert adj["difference"] == 4
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 7
+
+
+def test_adjustment_to_zero_is_allowed(client):
+    """Boundary: a count of 0 is valid (shelf is empty)."""
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post("/adjustments", json={
+        "product_id": product["id"], "counted_quantity": 0, "staff_name": "Moshi",
+    })
+    assert response.status_code == 201
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 0
+
+
+def test_adjustment_rejects_negative_count_and_keeps_stock(client):
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post("/adjustments", json={
+        "product_id": product["id"], "counted_quantity": -1, "staff_name": "Moshi",
+    })
+    assert response.status_code == 400
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
+    assert client.get("/adjustments").get_json() == []
+
+
+def test_adjustment_requires_staff_name(client):
+    """R5: every stock change must record the staff member's name."""
+    product = make_product(client, quantity_on_hand=5)
+    response = client.post("/adjustments", json={"product_id": product["id"], "counted_quantity": 4})
+    assert response.status_code == 400
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
+
+
+def test_adjustment_for_nonexistent_product_returns_404(client):
+    response = client.post("/adjustments", json={"product_id": 999, "counted_quantity": 4, "staff_name": "Moshi"})
+    assert response.status_code == 404
