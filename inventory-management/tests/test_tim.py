@@ -365,3 +365,73 @@ def test_get_missing_purchase_order_returns_404(client):
 
     assert response.status_code == 404
     assert response.get_json()["error"] == "Purchase order not found"
+
+
+def test_receive_purchase_order_with_partial_quantity(client):
+    supplier = create_supplier(client)
+    product = create_product(client)
+
+    purchase_order = create_purchase_order(
+        client,
+        supplier["id"],
+        product["id"],
+        quantity=10,
+    )
+
+    response = client.put(
+        f"/purchase-orders/{purchase_order['id']}/receive",
+        json={"quantity_received": 7},
+    )
+
+    assert response.status_code == 200
+
+    received = response.get_json()
+
+    assert received["status"] == "received"
+    assert received["quantity_received"] == 7
+
+    stock_response = client.get(
+        f"/products/{product['id']}/stock-level"
+    )
+    assert stock_response.status_code == 200
+    assert stock_response.get_json()["quantity_on_hand"] == 12
+
+    transactions = client.get("/transactions").get_json()
+    assert len(transactions) == 1
+    assert transactions[0]["quantity"] == 7
+
+
+def test_receive_purchase_order_rejects_invalid_received_quantity(client):
+    supplier = create_supplier(client)
+    product = create_product(client)
+
+    purchase_order = create_purchase_order(
+        client,
+        supplier["id"],
+        product["id"],
+        quantity=10,
+    )
+
+    response = client.put(
+        f"/purchase-orders/{purchase_order['id']}/receive",
+        json={"quantity_received": 0},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == (
+        "quantity_received must be a positive integer"
+    )
+
+    order = client.get(
+        f"/purchase-orders/{purchase_order['id']}"
+    ).get_json()
+
+    assert order["status"] == "pending"
+    assert order["quantity_received"] is None
+
+    stock = client.get(
+        f"/products/{product['id']}/stock-level"
+    ).get_json()
+
+    assert stock["quantity_on_hand"] == 5
+    assert client.get("/transactions").get_json() == []
