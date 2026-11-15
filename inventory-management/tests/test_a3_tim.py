@@ -55,3 +55,41 @@ def test_stock_adjustment_calls_notification_with_expected_details(client):
         "Low stock alert: Hammer",
         "Hammer (SKU HAM-001) has 5 units remaining; reorder level is 5.",
     )
+
+
+def test_product_web_ui_create_display_and_delete(client):
+    assert client.get("/ui/products").status_code == 200
+
+    create = client.post(
+        "/ui/products",
+        data={"name": "Hammer", "sku": "HAM-001", "unit_price": "15.50",
+              "quantity_on_hand": "7"},
+    )
+    assert create.status_code == 302
+    products = client.get("/products").get_json()
+    assert len(products) == 1
+    assert products[0]["name"] == "Hammer"
+    assert products[0]["quantity_on_hand"] == 7
+    assert b"Hammer" in client.get("/ui/products").data
+
+    delete = client.post(f"/ui/products/{products[0]['id']}/delete")
+    assert delete.status_code == 302
+    assert client.get("/products").get_json() == []
+
+
+def test_supplier_web_ui_create_display_and_delete(client):
+    assert client.get("/ui/suppliers").status_code == 200
+
+    create = client.post(
+        "/ui/suppliers",
+        data={"name": "Acme Tools", "contact_email": "sales@acme.example"},
+    )
+    assert create.status_code == 302
+    suppliers = client.get("/suppliers").get_json()
+    assert len(suppliers) == 1
+    assert suppliers[0]["contact_email"] == "sales@acme.example"
+    assert b"Acme Tools" in client.get("/ui/suppliers").data
+
+    delete = client.post(f"/ui/suppliers/{suppliers[0]['id']}/delete")
+    assert delete.status_code == 302
+    assert client.get("/suppliers").get_json() == []
