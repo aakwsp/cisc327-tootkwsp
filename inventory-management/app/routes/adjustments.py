@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from app import store
 from app.models.stock_adjustment import StockAdjustment
+from notification_service import send_notification
 
 adjustments_bp = Blueprint("adjustments", __name__, url_prefix="/adjustments")
 
@@ -43,4 +44,19 @@ def create_adjustment():
     )
     product.quantity_on_hand = counted
     store.adjustments[adjustment_id] = adjustment
-    return jsonify(adjustment.to_dict()), 201
+
+    notification_sent = None
+    if adjustment.previous_quantity > product.reorder_level >= counted:
+        notification_sent = send_notification(
+            "Inventory / Operations Manager",
+            f"Low stock alert: {product.name}",
+            (
+                f"{product.name} (SKU {product.sku}) has {counted} units remaining; "
+                f"reorder level is {product.reorder_level}."
+            ),
+        )
+
+    result = adjustment.to_dict()
+
+    result["notification_sent"] = notification_sent
+    return jsonify(result), 201
