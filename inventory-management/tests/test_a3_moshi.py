@@ -1,7 +1,7 @@
 # -_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
 # test_a3_moshi.py
 #
-# test file A3
+# test file for A3
 #
 # part 1: coverage-directed tests from the baseline report
 #   - home page 
@@ -10,6 +10,8 @@
 #   - purchase order API not-found paths 
 # part 2: low-stock notification tests 
 # -_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
+
+from unittest.mock import patch
 
 from app import store
 
@@ -190,3 +192,74 @@ def test_receive_missing_purchase_order_returns_404_and_leaves_stock(client):
     assert response.get_json() == {"error": "Purchase order not found"}
     assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 5
     assert client.get("/transactions").get_json() == []
+
+
+# -_-_-_-_-_-_-_-_-_-_-_-_- part 2: low-stock notification (failure + non-trigger paths)
+#
+# send_notification is patched where the app uses it (app.routes.adjustments),
+# so no real notification is ever recorded by these tests.
+
+SEND = "app.routes.adjustments.send_notification"
+
+
+def test_failed_low_stock_alert_still_saves_adjustment(client, monkeypatch):
+    """stub returns False: the stock correction must still go through and the
+    response must report that the alert was not sent"""
+    monkeypatch.setattr(SEND, lambda recipient, subject, message: False)  # stub
+    product = make_product(client, quantity_on_hand=20, reorder_level=10)
+    response = client.post(
+        "/adjustments",
+        json={"product_id": product["id"], "counted_quantity": 4, "staff_name": "Moshi"},
+    )
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["notification_sent"] is False
+    assert body["previous_quantity"] == 20
+    assert body["counted_quantity"] == 4
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 4
+    assert len(client.get("/adjustments").get_json()) == 1
+
+
+def test_no_alert_when_count_stays_just_above_reorder_level(client):
+    """boundary: reorder level is 10 and the count lands on 11, so no alert"""
+    product = make_product(client, quantity_on_hand=20, reorder_level=10)
+    with patch(SEND) as mock_send:
+        response = client.post(
+            "/adjustments",
+            json={"product_id": product["id"], "counted_quantity": 11, "staff_name": "Moshi"},
+        )
+    assert response.status_code == 201
+    assert response.get_json()["notification_sent"] is None
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 11
+    mock_send.assert_not_called()
+
+
+def test_no_repeat_alert_when_product_was_already_low(client):
+    """stock was already at the reorder level before the count, so it did not
+    cross the threshold and no second alert goes out"""
+    product = make_product(client, quantity_on_hand=10, reorder_level=10)
+    with patch(SEND) as mock_send:
+        response = client.post(
+            "/adjustments",
+            json={"product_id": product["id"], "counted_quantity": 3, "staff_name": "Moshi"},
+        )
+    assert response.status_code == 201
+    assert response.get_json()["notification_sent"] is None
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 3
+    mock_send.assert_not_called()
+
+
+def test_no_alert_when_adjustment_is_rejected(client):
+    """a low count with no staff name is rejected, so stock is unchanged and
+    nobody is alerted about a correction that never happened"""
+    product = make_product(client, quantity_on_hand=20, reorder_level=10)
+    with patch(SEND) as mock_send:
+        response = client.post(
+            "/adjustments",
+            json={"product_id": product["id"], "counted_quantity": 2, "staff_name": "  "},
+        )
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "staff_name is required"}
+    assert client.get(f"/products/{product['id']}").get_json()["quantity_on_hand"] == 20
+    assert client.get("/adjustments").get_json() == []
+    mock_send.assert_not_called()
