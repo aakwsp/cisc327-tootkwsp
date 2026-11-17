@@ -12,7 +12,7 @@ def list_transactions():
     product_id = request.args.get("product_id", type=int)
     supplier_id = request.args.get("supplier_id", type=int)
     if product_id is not None:
-        results = [t for t in results if t.supplier_id == product_id]
+        results = [t for t in results if t.product_id == product_id]
     if supplier_id is not None:
         results = [t for t in results if t.supplier_id == supplier_id]
     return jsonify([t.to_dict() for t in results])
@@ -28,9 +28,14 @@ def create_transaction():
     quantity = data["quantity"]
     tx_type = data["type"]
 
+    if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity <= 0:
+        return jsonify({"error": "quantity must be a positive integer"}), 400
+
     if tx_type == "IN":
         product.quantity_on_hand += quantity
     elif tx_type == "OUT":
+        if quantity > product.quantity_on_hand:
+            return jsonify({"error": "Insufficient stock"}), 400
         product.quantity_on_hand -= quantity
     else:
         return jsonify({"error": "type must be IN or OUT"}), 400
