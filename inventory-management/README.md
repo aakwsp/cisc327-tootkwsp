@@ -69,3 +69,70 @@ app working without a REST client, and calls the same in-memory store.
 ```bash
 pytest
 ```
+
+
+## Assignment 4: End-to-End Testing and Docker
+
+### Prerequisites
+
+- Python 3.12 or newer
+- pip
+- Docker Engine or Docker Desktop
+- Playwright with Chromium
+
+### Install Testing Dependencies
+
+```bash
+pip install -r requirements.txt
+python -m playwright install chromium
+```
+
+### Run E2E Tests Locally
+
+Start the Flask application:
+
+```bash
+python run.py
+```
+
+In a separate terminal, execute:
+
+```bash
+python -m pytest tests/e2e -v --headed
+```
+
+### Build the Docker Image
+
+```bash
+docker build -t cisc327-a4 .
+```
+
+### Run the Docker Container
+
+Stop the local Flask server before starting the container.
+
+```bash
+docker run --rm --name cisc327-a4 -p 5000:5000 cisc327-a4
+```
+
+The application is accessible at http://127.0.0.1:5000.
+
+The container exposes port 5000.
+
+### Run E2E Tests Against Docker
+
+With the container running, execute the same test suite from a separate terminal on the host machine:
+
+```bash
+python -m pytest tests/e2e -v --headed
+```
+
+### Stop the Docker Container
+
+```bash
+docker stop cisc327-a4
+```
+
+### Data Persistence
+
+The application uses in-memory storage. All products, suppliers, transactions, and other application data are lost when the application or container stops. No persistent database or Docker volumes are required.
