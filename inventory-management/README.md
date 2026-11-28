@@ -66,10 +66,11 @@ app working without a REST client, and calls the same in-memory store.
 
 ## Tests
 
-```bash
-pytest
-```
+Unit and integration tests (no running app needed):
 
+```bash
+python -m pytest --ignore=tests/e2e
+```
 
 ## Assignment 4: End-to-End Testing and Docker
 
@@ -115,9 +116,14 @@ Stop the local Flask server before starting the container.
 docker run --rm --name cisc327-a4 -p 5000:5000 cisc327-a4
 ```
 
-The application is accessible at http://127.0.0.1:5000.
+The application is accessible at http://127.0.0.1:5000. The container exposes port 5000.
 
-The container exposes port 5000.
+### Pull the Published Image (Docker Hub)
+
+```bash
+docker pull aakwsp/cisc327-a4
+docker run --rm --name cisc327-a4 -p 5000:5000 aakwsp/cisc327-a4
+```
 
 ### Run E2E Tests Against Docker
 
@@ -133,6 +139,12 @@ python -m pytest tests/e2e -v --headed
 docker stop cisc327-a4
 ```
 
+Or press Ctrl+C in the terminal running the container.
+
 ### Data Persistence
 
 The application uses in-memory storage. All products, suppliers, transactions, and other application data are lost when the application or container stops. No persistent database or Docker volumes are required.
+
+### Continuous Integration
+
+GitHub Actions runs the unit tests with a 90% coverage gate, then starts the app and runs the E2E tests headless against it.
