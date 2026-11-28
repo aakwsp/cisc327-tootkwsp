@@ -69,3 +69,35 @@ app working without a REST client, and calls the same in-memory store.
 ```bash
 pytest
 ```
+
+## Running with Docker
+
+Prerequisites: Docker installed (`docker --version`).
+
+Build and run from the `inventory-management/` folder:
+
+```bash
+docker build -t cisc327-a4 .
+docker run --rm -p 5000:5000 cisc327-a4
+```
+
+Or pull the published image from Docker Hub:
+
+```bash
+docker pull aakwsp/cisc327-a4
+docker run --rm -p 5000:5000 aakwsp/cisc327-a4
+```
+
+The app is available at http://127.0.0.1:5000 (port 5000). Stop the container with Ctrl+C, or `docker stop <container-id>` from another terminal.
+
+Data is stored in memory only, so everything you add is lost when the container stops.
+
+## End-to-end tests (Playwright)
+
+```bash
+pip install -r requirements.txt
+python -m playwright install chromium
+python -m pytest tests/e2e -v --headed
+```
+
+The app must already be running on port 5000, either locally (`python run.py`) or in Docker. The E2E tests are excluded from the CI unit-test run, since they need a running app and a browser.
