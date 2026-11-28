@@ -66,38 +66,85 @@ app working without a REST client, and calls the same in-memory store.
 
 ## Tests
 
-```bash
-pytest
-```
-
-## Running with Docker
-
-Prerequisites: Docker installed (`docker --version`).
-
-Build and run from the `inventory-management/` folder:
+Unit and integration tests (no running app needed):
 
 ```bash
-docker build -t cisc327-a4 .
-docker run --rm -p 5000:5000 cisc327-a4
+python -m pytest --ignore=tests/e2e
 ```
 
-Or pull the published image from Docker Hub:
+## Assignment 4: End-to-End Testing and Docker
 
-```bash
-docker pull aakwsp/cisc327-a4
-docker run --rm -p 5000:5000 aakwsp/cisc327-a4
-```
+### Prerequisites
 
-The app is available at http://127.0.0.1:5000 (port 5000). Stop the container with Ctrl+C, or `docker stop <container-id>` from another terminal.
+- Python 3.12 or newer
+- pip
+- Docker Engine or Docker Desktop
+- Playwright with Chromium
 
-Data is stored in memory only, so everything you add is lost when the container stops.
-
-## End-to-end tests (Playwright)
+### Install Testing Dependencies
 
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium
+```
+
+### Run E2E Tests Locally
+
+Start the Flask application:
+
+```bash
+python run.py
+```
+
+In a separate terminal, execute:
+
+```bash
 python -m pytest tests/e2e -v --headed
 ```
 
-The app must already be running on port 5000, either locally (`python run.py`) or in Docker. The E2E tests are excluded from the CI unit-test run, since they need a running app and a browser.
+### Build the Docker Image
+
+```bash
+docker build -t cisc327-a4 .
+```
+
+### Run the Docker Container
+
+Stop the local Flask server before starting the container.
+
+```bash
+docker run --rm --name cisc327-a4 -p 5000:5000 cisc327-a4
+```
+
+The application is accessible at http://127.0.0.1:5000. The container exposes port 5000.
+
+### Pull the Published Image (Docker Hub)
+
+```bash
+docker pull aakwsp/cisc327-a4
+docker run --rm --name cisc327-a4 -p 5000:5000 aakwsp/cisc327-a4
+```
+
+### Run E2E Tests Against Docker
+
+With the container running, execute the same test suite from a separate terminal on the host machine:
+
+```bash
+python -m pytest tests/e2e -v --headed
+```
+
+### Stop the Docker Container
+
+```bash
+docker stop cisc327-a4
+```
+
+Or press Ctrl+C in the terminal running the container.
+
+### Data Persistence
+
+The application uses in-memory storage. All products, suppliers, transactions, and other application data are lost when the application or container stops. No persistent database or Docker volumes are required.
+
+### Continuous Integration
+
+GitHub Actions runs the unit tests with a 90% coverage gate, then starts the app and runs the E2E tests headless against it.
